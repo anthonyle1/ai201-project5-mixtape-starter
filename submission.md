@@ -59,7 +59,8 @@ The root cause was found by running pytest in bash, which showcased the `test_st
 ### The root cause 
 
 In the following block of code in `services/streak_service.py`, the only check whether the user's listening streak is updated:
-```     elif days_since_last == 1 and today.weekday() != 6:
+```     
+elif days_since_last == 1 and today.weekday() != 6:
         user.listening_streak += 1
 ```
 
