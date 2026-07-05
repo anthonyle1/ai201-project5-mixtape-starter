@@ -161,5 +161,88 @@ Therefore, to fix the change, I removed the indexing in `get_playlist_songs` so 
 
 To test, I reran pytest to determine if `test_playlist_returns_songs_in_order` is resolved. The changes causes this test to pass, including `test_playlist_returns_all_songs` to additionally pass. This means the bug that caused these to fail initially were shared. To determine side-effect checks, I looked into where `get_playlist_songs` is used, which is additionally referenced in `notification_services.py`. However, the function is not used within the service. Thus, the change is contained within a specific use case, which is the `GET /playlists/<id>/songs` pipeline, which the related tests in pytest aims to check for.
 
+## 4. I got notified when a friend added my song to a playlist but not when they rated it
+
+### How you reproduced it 
+I asked Claude to produce the following commands, simulating the interaction:
+```
+# Check Darius's notification inbox
+curl.exe -s "http://127.0.0.1:5000/users/d4fd9739-839d-4e96-a797-0d58ba529380/notifications"
+
+# Nova submits a rating 
+curl.exe -s -X POST "http://127.0.0.1:5000/songs/0a2f5267-4811-43f7-a6f4-c6fe549f2883/rate" -H "Content-Type: application/json" -d '{"user_id": "ee172cec-babd-4954-ad85-336e1bd158b3", "score": 5}'
+
+# Darius checks his inbox again.
+curl.exe -s "http://127.0.0.1:5000/users/d4fd9739-839d-4e96-a797-0d58ba529380/notifications"
+
+```
+
+Darius's notification count stays the same even though Nova submitting a rating should update Darius's inbox.
+
+### How you found the root cause 
+
+I found the relevant function `rate_song(user_id: str, song_id: str, score: int) -> Rating:` in `services\notification_service.py`. After reading through the function, I noticed that the function did not submit a notification. This is probably the root cause of the error
+
+### The root cause
+The `rate_song` function was missing the ability to send a notification to the rater's friends. 
+
+# Your fix and side-effect check
+
+I added functionality to the `rate_songs` function to be able to send a notification to the friends of the rater.
+```
+    for f in rater.friends:
+        create_notification(
+            user_id= f.id,
+            notification_type="song_rated",
+            body=f"{rater.username} rated your song '{song.title}' {score}/5.",
+        )
+```
+
+The fix aims to ensure the friends of the rater recieves a the relevant notification.
+
+I reran the tests that found the error and re-seeded the data (updating the curl commands).
+
+```
+$ curl.exe -s "http://127.0.0.1:5000/users/d4fd9739-839d-4e96-a797-0d58ba529380/notifications"
+{"count":5,"notifications":[{"body":"nova rated your song 'Midnight Drive' 3/5.","created_at":"2026-07-05T23:30:06.790913","id":"a74620e6-604e-4a70-8345-f57143ba204b","read":false,"type":"song_rated","user_id":"d4fd9739-839d-4e96-a797-0d58ba529380"},{"body":"nova rated your song 'Midnight Drive' 4/5.","created_at":"2026-07-05T23:29:59.207160","id":"ca77dbaa-74ed-4412-83a2-3ed975769973","read":false,"type":"song_rated","user_id":"d4fd9739-839d-4e96-a797-0d58ba529380"},{"body":"nova rated your song 'Midnight Drive' 4/5.","created_at":"2026-07-05T23:29:34.741805","id":"67fede41-fda3-46f6-aadd-5713ac92dd80","read":false,"type":"song_rated","user_id":"d4fd9739-839d-4e96-a797-0d58ba529380"},{"body":"nova rated your song 'Midnight Drive' 5/5.","created_at":"2026-07-05T23:29:05.606119","id":"fc6a1829-fe6b-41fe-900d-2c8177751039","read":false,"type":"song_rated","user_id":"d4fd9739-839d-4e96-a797-0d58ba529380"},{"body":"nova rated your song 'Midnight Drive' 5/5.","created_at":"2026-07-05T23:28:09.590827","id":"8adda471-8ab9-497f-8ce6-d996c60459fb","read":false,"type":"song_rated","user_id":"d4fd9739-839d-4e96-a797-0d58ba529380"}]}
+((.venv) ) 
+anthony@DESKTOP-JJCCQAU MINGW64 ~/Documents/ai201/ai201-project5-mixtape-starter (bugfix/mixtape)
+$ curl.exe -s -X POST "http://127.0.0.1:5000/songs/0a2f5267-4811-43f7-a6f4-c6fe549f2883/rate" -H "Content-Type: application/json" -d '{"user_id": "ee172cec-babd-4954-ad85-336e1bd158b3", "score": 1}'
+{"id":"89393137-a98b-4623-99ce-35c70a634fe3","rated_at":"2026-07-05T23:28:09.547596","score":1,"song_id":"0a2f5267-4811-43f7-a6f4-c6fe549f2883","user_id":"ee172cec-babd-4954-ad85-336e1bd158b3"}
+((.venv) ) 
+anthony@DESKTOP-JJCCQAU MINGW64 ~/Documents/ai201/ai201-project5-mixtape-starter (bugfix/mixtape)
+$ curl.exe -s "http://127.0.0.1:5000/users/d4fd9739-839d-4e96-a797-0d58ba529380/notifications"
+{"count":6,"notifications":[{"body":"nova rated your song 'Midnight Drive' 1/5.","created_at":"2026-07-05T23:31:04.406133","id":"37af8d2a-862e-4e9a-935a-e04ee0c4f48a","read":false,"type":"song_rated","user_id":"d4fd9739-839d-4e96-a797-0d58ba529380"},{"body":"nova rated your song 'Midnight Drive' 3/5.","created_at":"2026-07-05T23:30:06.790913","id":"a74620e6-604e-4a70-8345-f57143ba204b","read":false,"type":"song_rated","user_id":"d4fd9739-839d-4e96-a797-0d58ba529380"},{"body":"nova rated your song 'Midnight Drive' 4/5.","created_at":"2026-07-05T23:29:59.207160","id":"ca77dbaa-74ed-4412-83a2-3ed975769973","read":false,"type":"song_rated","user_id":"d4fd9739-839d-4e96-a797-0d58ba529380"},{"body":"nova rated your song 'Midnight Drive' 4/5.","created_at":"2026-07-05T23:29:34.741805","id":"67fede41-fda3-46f6-aadd-5713ac92dd80","read":false,"type":"song_rated","user_id":"d4fd9739-839d-4e96-a797-0d58ba529380"},{"body":"nova rated your song 'Midnight Drive' 5/5.","created_at":"2026-07-05T23:29:05.606119","id":"fc6a1829-fe6b-41fe-900d-2c8177751039","read":false,"type":"song_rated","user_id":"d4fd9739-839d-4e96-a797-0d58ba529380"},{"body":"nova rated your song 'Midnight Drive' 5/5.","created_at":"2026-07-05T23:28:09.590827","id":"8adda471-8ab9-497f-8ce6-d996c60459fb","read":false,"type":"song_rated","user_id":"d4fd9739-839d-4e96-a797-0d58ba529380"}]}
+((.venv) ) 
+```
+
+There are no side-effect changes as the relevant functions (`create_notification` and `rate_song`) are retrieved within their own respecitve endpoints (`POST/songs/<song_id>/rate` and `/<user_id>/notifications"`) Adding a song to a playlist is not affected as `create_notification` is not changed, only included into `rate_song`. I was sure to create different messages between adding to a playlist and rating a song to ensure it is clear that both are seperate.
+
+
 # AI Usage
 1. I asked Claude to generate additional test cases to test bug #2 (Friends Listening Now) to help identify where the bug is. It returned the `test_listening_now_excludes_listen_from_yesterday` test, which upon running, fails before applying the fix. I read through the code logic and verified that the test case runs as intended. I removed additional tests Claude generated since I didn't want to run on a false positive for other potential bugs in the code. 
+
+2. I asked Claude to generate curl commands to look into bug 4: `I got notified when a friend added my song to a playlist but not when they rated it.`. It originally gave me a version that I couldn't run one by one, so I asked Claude to update it to make sure I can run everything in one line. Afterward, I noticed that it was making use of another function (adding to a playlist), which is something the bug did not encompass. After removing this, I adjusted the curl commands to only check Darius's inbox after Nova submits a rating.
+
+# Regression test
+
+I used a regression test to look for the bug in Friends Listening Now shows people from yesterday: 
+``` 
+def test_listening_now_excludes_listen_from_yesterday(app, friends):
+    """
+    A friend who listened late yesterday (a different calendar day than
+    today, regardless of what time this test runs) should NOT show up as
+    listening now. Fails today because RECENT_THRESHOLD is a rolling 24h
+    window rather than "today", so a listen from yesterday at 11:59pm is
+    still within the window and incorrectly shows as "listening now".
+    """
+    with app.app_context():
+        now = datetime.now(timezone.utc)
+        yesterday_date = (now - timedelta(days=1)).date()
+        listened_at = datetime.combine(yesterday_date, time(23, 59), tzinfo=timezone.utc)
+        _listen(friends["friend"].id, friends["song"].id, listened_at)
+
+        feed = get_friends_listening_now(friends["viewer"].id)
+        friend_ids = [entry["friend"]["id"] for entry in feed]
+        assert friends["friend"].id not in friend_ids  # Should be excluded, bug includes it
+```
