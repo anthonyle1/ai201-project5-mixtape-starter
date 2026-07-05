@@ -195,7 +195,7 @@ I found the relevant function `rate_song(user_id: str, song_id: str, score: int)
 ### The root cause
 The `rate_song` function was missing the ability to send a notification to the rater's friends. 
 
-# Your fix and side-effect check
+### Your fix and side-effect check
 
 I added functionality to the `rate_songs` function to be able to send a notification to the friends of the rater.
 ```
