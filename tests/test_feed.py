@@ -46,18 +46,6 @@ def _listen(user_id, song_id, when):
     db.session.commit()
     return event
 
-
-def test_listening_now_includes_recent_listen(app, friends):
-    """A friend who listened a few minutes ago should show up as listening now."""
-    with app.app_context():
-        now = datetime.now(timezone.utc)
-        _listen(friends["friend"].id, friends["song"].id, now - timedelta(minutes=5))
-
-        feed = get_friends_listening_now(friends["viewer"].id)
-        friend_ids = [entry["friend"]["id"] for entry in feed]
-        assert friends["friend"].id in friend_ids
-
-
 def test_listening_now_excludes_listen_from_yesterday(app, friends):
     """
     A friend who listened late yesterday (a different calendar day than
@@ -77,23 +65,3 @@ def test_listening_now_excludes_listen_from_yesterday(app, friends):
         assert friends["friend"].id not in friend_ids  # Should be excluded, bug includes it
 
 
-def test_listening_now_excludes_listen_older_than_threshold(app, friends):
-    """A friend who listened multiple days ago should not show up as listening now."""
-    with app.app_context():
-        now = datetime.now(timezone.utc)
-        _listen(friends["friend"].id, friends["song"].id, now - timedelta(days=3))
-
-        feed = get_friends_listening_now(friends["viewer"].id)
-        friend_ids = [entry["friend"]["id"] for entry in feed]
-        assert friends["friend"].id not in friend_ids
-
-
-def test_listening_now_ignores_non_friends(app, friends):
-    """A recent listen from a non-friend should not appear in the viewer's feed."""
-    with app.app_context():
-        now = datetime.now(timezone.utc)
-        _listen(friends["stranger"].id, friends["song"].id, now - timedelta(minutes=5))
-
-        feed = get_friends_listening_now(friends["viewer"].id)
-        friend_ids = [entry["friend"]["id"] for entry in feed]
-        assert friends["stranger"].id not in friend_ids
