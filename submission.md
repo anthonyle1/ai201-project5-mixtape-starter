@@ -70,3 +70,46 @@ does not allow the streak to be updated if it is Sunday (weekday() == 6). This i
 ### Your fix and side-effect check 
 
 By removing `today.weekday() != 6:` and changing the line to `elif days_since_last == 1:` only, we are able to correct the error. It's important to recognize that the current date should always be after or on the same day as the the previous listen, thus the weekday check is not neccessary. Additioinally, the streak only affects `POST/songs/<song_id>/listen` (where the function is called) and `/users/<user_id>/streak`, which simply only returns the user's streak. Therefore, there isn't much interaction between other relevant paths with the current streak and is only manipulated under the POST endpoint. 
+
+## 2 Friends Listening Now shows people from yesterday
+
+### How you reproduced it 
+I asked Claude to generate a test case that would help trigger an error based on the issue description. After verifying the test case logically works as anticipated, I ran the test case through `pytest` and saw the error generated.
+
+### How you found the root cause 
+After finding the relevant function `get_friends_listening_now` in `services/feed_service.py`, I read through the code's logic. I assumed the issue was related to how the cutoff is calculated, since this would be the part of the code that determines if the ListeningEvent is included or not. After investigating the logic, I thought about changing the logic to better fit what the function is inteneded to do semantically, rather than a 24hr check, as 'yesterday' signifies the previous day, which can be within the past 24 hours.
+
+### The root cause 
+In `services/feed_service.py`, the function `get_friends_listening_now`, calculates the cutoff of listening events of the current day incorrectly. The code currently retrives current users within the past 24 hours, however, it should be within only the current day, which is dependent on the user's current time subtracted by how many hours has lapsed during the current day, instead of the past 24 hours. 
+
+```
+RECENT_THRESHOLD = timedelta(hours=24)
+...
+cutoff = datetime.now(timezone.utc) - RECENT_THRESHOLD
+```
+
+
+
+### Your fix and side-effect check 
+The cutoff is now calculated by calculating when the current day begins in `services/feed_service.py`. 
+
+```
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+```
+
+and adjusting the filter accordingly
+
+```
+        .filter(
+            ListeningEvent.user_id.in_(friend_ids),
+            ListeningEvent.listened_at >= today_start,
+        )
+```
+
+The updated change adjusts the cutoff to when the current day begins, which only allows ListeningEvents who have listened on or after the current day 00:00:00:00 (HH:MM:SS:MS).
+
+The bug was tested by rerunning pytest to see if the generated test works. Additionally, the changed function only affects `/feed/<user_id>/listening-now`, which makes this changed fairly contained within this change only. Especially since, `get_activity_feed()` found in the same file as the fixed function operates agnostic of any cutoff and the `/feed/<user_id>/listening-now` endpoint.  
+
+# AI Usage
+1. I asked Claude to generate additional test cases to test bug #2 (Friends Listening Now) to help identify where the bug is. It returned the `test_listening_now_excludes_listen_from_yesterday` test, which upon running, fails before applying the fix. I read through the code logic and verified that the test case runs as intended. 
