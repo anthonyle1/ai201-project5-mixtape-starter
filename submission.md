@@ -111,5 +111,55 @@ The updated change adjusts the cutoff to when the current day begins, which only
 
 The bug was tested by rerunning pytest to see if the generated test works. Additionally, the changed function only affects `/feed/<user_id>/listening-now`, which makes this changed fairly contained within this change only. Especially since, `get_activity_feed()` found in the same file as the fixed function operates agnostic of any cutoff and the `/feed/<user_id>/listening-now` endpoint.  
 
+## 5 The last song in a playlist never shows up
+
+### How you reproduced it 
+
+The bug appears after running pytest and showcases the test `test_playlist_returns_songs_in_order` in `tests/test_playlist.py` failing. After reading through the test, I saw that `Track 5` is not included in the left list when asserting (gneerated from `get_playlist_songs`). 
+
+```
+E           AssertionError: assert ['Track 1', '...3', 'Track 4'] == ['Track 1', '...4', 'Track 5']
+E
+E             Right contains one more item: 'Track 5'
+E             Use -v to get more diff
+```
+
+after running pytest -vv it showcases Track 5 not included. 
+
+```
+  Right contains one more item: 'Track 5'
+  
+  Full diff:
+    [
+        'Track 1',
+        'Track 2',
+        'Track 3',
+        'Track 4',
+  -     'Track 5',
+    ]
+```
+
+### How you found the root cause 
+I read through the test case and found `get_playlist_songs(playlist_id)` being used. After looking for the function in `services/playlist_search.py`, I read through the code logic. Based on previous bug errors, I assumed that there is an issue with the cut off with the search. I went ahead and looked for where any filtering occurs in the query and the return statement of the code.
+
+## The root cause
+
+```
+    return [song.to_dict() for song in songs[:-1]]
+
+```
+
+is the problematic line that causes the bug. This line upon returning accidently cuts off the last song that is queried, which is not intentional. I think a possible reason for this to happen is if the user needed to reverse the order of the returned list, but that is already handled by `.order_by(asc(playlist_entries.c.position))` in the query. Thus, reversing is also not required. Additionally, the way the playlists are indexed in the list is in the format `[start:end:step]`, and step previously was `-1`, which removed the last element when indexing the songs list. 
+
+### Your fix and side-effect check 
+
+Therefore, to fix the change, I removed the indexing in `get_playlist_songs` so the line now looks like 
+
+```
+    return [song.to_dict() for song in songs]
+```
+
+To test, I reran pytest to determine if `test_playlist_returns_songs_in_order` is resolved. The changes causes this test to pass, including `test_playlist_returns_all_songs` to additionally pass. This means the bug that caused these to fail initially were shared. To determine side-effect checks, I looked into where `get_playlist_songs` is used, which is additionally referenced in `notification_services.py`. However, the function is not used within the service. Thus, the change is contained within a specific use case, which is the `GET /playlists/<id>/songs` pipeline, which the related tests in pytest aims to check for.
+
 # AI Usage
 1. I asked Claude to generate additional test cases to test bug #2 (Friends Listening Now) to help identify where the bug is. It returned the `test_listening_now_excludes_listen_from_yesterday` test, which upon running, fails before applying the fix. I read through the code logic and verified that the test case runs as intended. I removed additional tests Claude generated since I didn't want to run on a false positive for other potential bugs in the code. 
