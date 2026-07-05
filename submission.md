@@ -1,3 +1,12 @@
+# AI Usage
+1. I asked Claude to generate additional test cases to test bug #2 (Friends Listening Now) to help identify where the bug is. It returned the `test_listening_now_excludes_listen_from_yesterday` test, which upon running, fails before applying the fix. I read through the code logic and verified that the test case runs as intended. I removed additional tests Claude generated since I didn't want to run on a false positive for other potential bugs in the code. 
+
+2. I asked Claude to generate curl commands to look into bug 4: `I got notified when a friend added my song to a playlist but not when they rated it.`. It originally gave me a version that I couldn't run one by one, so I asked Claude to update it to make sure I can run everything in one line. Afterward, I noticed that it was making use of another function (adding to a playlist), which is something the bug did not encompass. After removing this, I adjusted the curl commands to only check Darius's inbox after Nova submits a rating. I also used Claude to help change the randomized UUIDs after re-seeding the data when testing changes. 
+
+
+# Commit History
+![alt text](image.png)
+
 # Codebase Map
 
 ## Routes
@@ -217,12 +226,6 @@ $ curl.exe -s "http://127.0.0.1:5000/users/d4fd9739-839d-4e96-a797-0d58ba529380/
 ```
 
 There are no side-effect changes as the relevant functions (`create_notification` and `rate_song`) are retrieved within their own respecitve endpoints (`POST/songs/<song_id>/rate` and `/<user_id>/notifications"`) Adding a song to a playlist is not affected as `create_notification` is not changed, only included into `rate_song`. I was sure to create different messages between adding to a playlist and rating a song to ensure it is clear that both are seperate.
-
-
-# AI Usage
-1. I asked Claude to generate additional test cases to test bug #2 (Friends Listening Now) to help identify where the bug is. It returned the `test_listening_now_excludes_listen_from_yesterday` test, which upon running, fails before applying the fix. I read through the code logic and verified that the test case runs as intended. I removed additional tests Claude generated since I didn't want to run on a false positive for other potential bugs in the code. 
-
-2. I asked Claude to generate curl commands to look into bug 4: `I got notified when a friend added my song to a playlist but not when they rated it.`. It originally gave me a version that I couldn't run one by one, so I asked Claude to update it to make sure I can run everything in one line. Afterward, I noticed that it was making use of another function (adding to a playlist), which is something the bug did not encompass. After removing this, I adjusted the curl commands to only check Darius's inbox after Nova submits a rating.
 
 # Regression test
 
